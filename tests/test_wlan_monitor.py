@@ -603,7 +603,8 @@ class GroupTests(unittest.TestCase):
 
     def test_view_command(self):
         parse = wlan_monitor.parse_command
-        self.assertEqual(parse('{"cmd":"view","mode":"type","collapsed":["apple","apple","aa:bb:cc:dd:ee:ff","$(x)",5]}'),
+        self.assertEqual(parse('{"cmd":"view","mode":"type","collapsed":["apple",5]}'), "")  # a wrong type: all refused
+        self.assertEqual(parse('{"cmd":"view","mode":"type","collapsed":["apple","apple","aa:bb:cc:dd:ee:ff","$(x)"]}'),
                          {"cmd": "view", "mode": "type", "collapsed": ["apple", "aa:bb:cc:dd:ee:ff"]})
         self.assertEqual(parse('{"cmd":"view","mode":"tree","collapsed":[]}'), "")
         self.assertEqual(parse('{"cmd":"view","mode":"band","collapsed":["gsix"]}'), {"cmd": "view", "mode": "band", "collapsed": ["gsix"]})
@@ -752,7 +753,7 @@ class FritzTests(unittest.TestCase):
         self.assertEqual((info["state"], info["message_code"]), ("error", "fzNetworkChanged"))
         self.assertIsNone(wlan_monitor.load_fritz())
         # A login still queued for A when step() already sees B (the change not reported yet): not sent.
-        fritz.pending_login = ("fritz1234", "s3cret pass", "192.168.178.1", "1c:11:22:33:44:6c", 1)
+        fritz.pending_login = ("fritz1234", "s3cret pass", "192.168.178.1", "1c:11:22:33:44:6c", 1, "")
         with never, no_model:
             fritz.step()
         self.assertEqual(fritz.snapshot()[0]["message_code"], "fzNetworkChanged")
@@ -778,6 +779,161 @@ class FritzTests(unittest.TestCase):
                 return 200, {}, soap_ok.encode(), "c" * 64
             return 200, {}, mesh_json, "c" * 64
         return fake_http
+
+    def login_pair(self):
+        """Two collectors (two screens) on the same FRITZ!Box; the first has a login queued."""
+        ip, mac = "192.168.178.1", "1c:23:a2:92:2a:6c"
+        first, second = wlan_monitor.FritzMesh(), wlan_monitor.FritzMesh()
+        for fritz in (first, second):
+            fritz.set_network(ip, mac, True, True, "wlan0")
+            fritz.model_for = (ip, mac)
+        first.login("fritz1234", "s3cret pass", first.net_id)
+        return first, second
+
+    def test_disconnect_elsewhere_during_a_login_is_not_undone(self):
+        """Screen A logs in, screen B presses Disconnect while A's login is still in flight: A
+        saves nothing, and neither collector uses a login afterwards."""
+        first, second = self.login_pair()
+        calls = []
+        with mock.patch.object(wlan_monitor, "bounded_http", side_effect=self.challenge_http(calls, second.logout)), \
+                mock.patch.object(wlan_monitor, "neighbor_mac", return_value="1c:23:a2:92:2a:6c"):
+            first.step()
+        self.assertTrue(calls)  # the login really was in flight
+        self.assertIsNone(wlan_monitor.load_fritz())
+        self.assertIsNone(first.creds)
+        self.assertEqual(first.snapshot()[0]["state"], "off")
+        with mock.patch.object(wlan_monitor, "bounded_http", side_effect=AssertionError("must not connect")):
+            first.step()
+            second.step()
+        self.assertIsNone(wlan_monitor.load_fritz())
+        self.assertEqual((first.snapshot()[0]["user"], second.snapshot()[0]["user"]), ("", ""))
+        # A login typed after that Disconnect is saved and followed by the other screen.
+        first.login("fritz1234", "s3cret pass", first.net_id)
+        with mock.patch.object(wlan_monitor, "bounded_http", side_effect=self.challenge_http([])), \
+                mock.patch.object(wlan_monitor, "neighbor_mac", return_value="1c:23:a2:92:2a:6c"):
+            first.step()
+        self.assertEqual(first.snapshot()[0]["state"], "connected")
+        self.assertEqual(wlan_monitor.load_fritz()["user"], "fritz1234")
+        with mock.patch.object(second, "refresh", side_effect=wlan_monitor.FritzError("fzNoMesh", "x")):
+            second.step()
+        self.assertEqual(second.snapshot()[0]["user"], "fritz1234")
+
+    def test_login_while_another_collector_holds_the_lock_saves_nothing(self):
+        """The lock is held by another process (a separate open file) for longer than the wait:
+        the login fails closed instead of saving without it."""
+        first, _second = self.login_pair()
+        directory = wlan_monitor.private_config_dir()
+        other = os.open(os.path.join(directory, wlan_monitor.FRITZ_LOCK_FILE), os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            __import__("fcntl").flock(other, __import__("fcntl").LOCK_EX)
+            with mock.patch.object(wlan_monitor, "bounded_http", side_effect=self.challenge_http([])), \
+                    mock.patch.object(wlan_monitor, "neighbor_mac", return_value="1c:23:a2:92:2a:6c"), \
+                    mock.patch.object(wlan_monitor, "FRITZ_LOCK_WAIT", 0.1):
+                first.step()
+        finally:
+            os.close(other)
+        self.assertIsNone(wlan_monitor.load_fritz())
+        self.assertNotEqual(first.snapshot()[0]["state"], "connected")
+        lock = os.path.join(directory, wlan_monitor.FRITZ_LOCK_FILE)
+        self.assertEqual(os.stat(lock).st_mode & 0o777, 0o600)
+
+    def test_disconnect_elsewhere_stops_a_refresh_before_the_password_response(self):
+        A, ip = "1c:23:a2:92:2a:6c", "192.168.178.1"
+        wlan_monitor.save_private_json(wlan_monitor.FRITZ_FILE, {"gateway_mac": A, "user": "u", "password": "p",
+                                                                 "pin": "c" * 64})
+        first, second = wlan_monitor.FritzMesh(), wlan_monitor.FritzMesh()
+        for fritz in (first, second):
+            fritz.set_network(ip, A, True, True, "wlan0")
+            fritz.model_for = (ip, A)
+        calls = []
+        with mock.patch.object(wlan_monitor, "bounded_http", side_effect=self.challenge_http(calls, second.logout)):
+            first.step()
+        self.assertEqual([c for c in calls if c[1]], [])  # no password-derived response went out
+        self.assertNotEqual(first.snapshot()[0]["state"], "connected")
+        self.assertIsNone(wlan_monitor.load_fritz())
+
+    def test_disconnect_racing_the_save_wins(self):
+        """A Disconnect that could not wait for the lock renews the revision right after another
+        collector saved its login: that collector deletes what it saved."""
+        first, _second = self.login_pair()
+        real_save = wlan_monitor.save_private_json
+
+        def save_then_disconnect(name, data, *a, **kw):
+            done = real_save(name, data, *a, **kw)
+            if name == wlan_monitor.FRITZ_FILE:
+                wlan_monitor.fritz_new_revision()
+            return done
+        with mock.patch.object(wlan_monitor, "bounded_http", side_effect=self.challenge_http([])), \
+                mock.patch.object(wlan_monitor, "neighbor_mac", return_value="1c:23:a2:92:2a:6c"), \
+                mock.patch.object(wlan_monitor, "save_private_json", side_effect=save_then_disconnect):
+            first.step()
+        self.assertIsNone(wlan_monitor.load_fritz())
+        self.assertIsNone(first.creds)
+        self.assertEqual(first.snapshot()[0]["state"], "off")
+
+    def test_a_disconnect_that_cannot_delete_is_retried_and_nothing_is_used(self):
+        A, ip = "1c:23:a2:92:2a:6c", "192.168.178.1"
+        wlan_monitor.save_private_json(wlan_monitor.FRITZ_FILE, {"gateway_mac": A, "user": "u", "password": "p",
+                                                                 "pin": "c" * 64})
+        fritz = wlan_monitor.FritzMesh()
+        fritz.set_network(ip, A, True, True, "wlan0")
+        fritz.model_for = (ip, A)
+        never = mock.patch.object(wlan_monitor, "bounded_http", side_effect=AssertionError("must not connect"))
+        with mock.patch.object(wlan_monitor, "fritz_new_revision", return_value=None), never:
+            fritz.logout()
+            self.assertEqual(fritz.snapshot()[0]["message_code"], "fzNotDeleted")
+            self.assertEqual(fritz.step(), wlan_monitor.FRITZ_REVOKE_RETRY)
+            fritz.login("u", "p", fritz.net_id)
+            self.assertIsNone(fritz.pending_login)  # no new login before the Disconnect is done
+        self.assertIsNotNone(wlan_monitor.load_fritz())
+        self.assertIsNone(fritz.creds)
+        with never:
+            fritz.step()
+        self.assertIsNone(wlan_monitor.load_fritz())
+        self.assertFalse(fritz.revoke_pending)
+        self.assertEqual(fritz.snapshot()[0]["state"], "off")
+
+    def test_a_login_file_that_cannot_be_deleted_is_used_nowhere(self):
+        A, ip = "1c:23:a2:92:2a:6c", "192.168.178.1"
+        wlan_monitor.save_private_json(wlan_monitor.FRITZ_FILE, {"gateway_mac": A, "user": "u", "password": "p",
+                                                                 "pin": "c" * 64})
+        first, second = wlan_monitor.FritzMesh(), wlan_monitor.FritzMesh()
+        self.assertEqual(second.creds["user"], "u")  # saved by 0.8.0 (no revision): still used
+        for fritz in (first, second):
+            fritz.set_network(ip, A, True, True, "wlan0")
+            fritz.model_for = (ip, A)
+        with mock.patch.object(wlan_monitor, "remove_fritz", return_value=False):
+            first.logout()
+        self.assertTrue(os.path.exists(os.path.join(wlan_monitor.config_dir(), wlan_monitor.FRITZ_FILE)))
+        self.assertFalse(first.revoke_pending)  # the new revision is what counts
+        with mock.patch.object(wlan_monitor, "bounded_http", side_effect=AssertionError("must not connect")):
+            second.step()
+        self.assertIsNone(second.creds)
+        self.assertIsNone(wlan_monitor.FritzMesh().creds)  # nor by a collector started later
+        # A later Disconnect that can delete it removes the stale file.
+        first.logout()
+        self.assertFalse(os.path.exists(os.path.join(wlan_monitor.config_dir(), wlan_monitor.FRITZ_FILE)))
+
+    def test_lock_file_is_never_a_symlink_or_fifo(self):
+        directory = wlan_monitor.private_config_dir()
+        lock = os.path.join(directory, wlan_monitor.FRITZ_LOCK_FILE)
+        target = os.path.join(self.tmp.name, "elsewhere")
+        os.symlink(target, lock)
+        with wlan_monitor.fritz_file_lock() as held:
+            self.assertFalse(held)
+        self.assertFalse(os.path.exists(target))
+        os.unlink(lock)
+        os.mkfifo(lock, 0o600)
+        with wlan_monitor.fritz_file_lock() as held:
+            self.assertFalse(held)
+        os.unlink(lock)
+        with wlan_monitor.fritz_file_lock() as held:
+            self.assertTrue(held)
+        # A Disconnect replaces the revision even while its value on disk is nonsense.
+        wlan_monitor.save_private_json(wlan_monitor.FRITZ_REV_FILE, {"rev": [1]})
+        self.assertIsNone(wlan_monitor.fritz_revision())  # never taken for any revision
+        wlan_monitor.FritzMesh().logout()
+        self.assertRegex(wlan_monitor.fritz_revision(), r"^[0-9a-f]{32}$")
 
     def test_a_gateway_change_during_login_work_sends_no_password_response(self):
         """The gateway changes (router B at the same address) while a login is in flight: during
@@ -1048,8 +1204,12 @@ class HostileCommandTests(unittest.TestCase):
             self.assertEqual(parse(line), "", line)  # refused, never coerced into a change
         self.assertEqual(parse('{"cmd":[]}'), "")
         self.assertEqual(parse('{"cmd":{}}'), "")
-        # Lists are filtered element by element; valid commands still work.
-        self.assertEqual(parse('{"cmd":"view","mode":"list","collapsed":["type",[],{}]}'),
+        # A wrong type inside a list refuses the whole command; valid commands still work.
+        for line in ('{"cmd":"view","mode":"list","collapsed":["type",[],{}]}',
+                     '{"cmd":"view","mode":"list","collapsed":[123,"type"]}',
+                     '{"cmd":"view","mode":"list","collapsed":["type",null]}'):
+            self.assertEqual(parse(line), "", line)
+        self.assertEqual(parse('{"cmd":"view","mode":"list","collapsed":["type","$(x)"]}'),
                          {"cmd": "view", "mode": "list", "collapsed": ["type"]})
         self.assertEqual(parse('{"cmd":"alerts","on":false}'), {"cmd": "alerts", "on": False})
         self.assertEqual(parse('{"cmd":"pin","mac":"AA:BB:CC:DD:EE:FF","on":true}'),
@@ -1337,7 +1497,7 @@ class MalformedReplyTests(unittest.TestCase):
         self.assertIsNone(second.creds)
         self.assertEqual(second.snapshot()[0]["user"], "")
         wlan_monitor.save_private_json(wlan_monitor.FRITZ_FILE, {"gateway_mac": A, "user": "v", "password": "q",
-                                                                 "pin": "c" * 64})
+                                                                 "pin": "c" * 64, "rev": wlan_monitor.fritz_revision()})
         with mock.patch.object(second, "refresh", side_effect=wlan_monitor.FritzError("fzNoMesh", "x")):
             second.step()
         self.assertEqual(second.snapshot()[0]["user"], "v")
@@ -1406,6 +1566,37 @@ class StaleNetworkTests(unittest.TestCase):
             snap = monitor.snapshot()
             self.assertFalse(snap["link"]["trusted"])
             sweep.assert_not_called()
+        self.run_snapshots(steps)
+
+    def test_untrust_on_one_screen_stops_the_other_collector(self):
+        def steps(monitor, state, sweep):
+            monitor.snapshot()
+            monitor.handle("trust")
+            other = wlan_monitor.Monitor()
+            self.assertTrue(other.snapshot()["link"]["trusted"])
+            monitor.handle("untrust")
+            other.last_full_scan = -math.inf
+            sweep.reset_mock()
+            self.assertFalse(other.snapshot()["link"]["trusted"])
+            sweep.assert_not_called()
+            # Trust on the other screen applies here too.
+            other.handle("trust")
+            self.assertTrue(monitor.snapshot()["link"]["trusted"])
+            # Untrust while another process holds the lock: nothing is written without it, this
+            # screen stops at once, and the shared list follows once the lock is free.
+            fcntl = __import__("fcntl")
+            held = os.open(os.path.join(wlan_monitor.config_dir(), wlan_monitor.TRUST_LOCK_FILE), os.O_RDWR)
+            try:
+                fcntl.flock(held, fcntl.LOCK_EX)
+                with mock.patch.object(wlan_monitor, "FRITZ_LOCK_WAIT", 0.05):
+                    monitor.handle("untrust")
+                    self.assertFalse(monitor.snapshot()["link"]["trusted"])
+                self.assertTrue(wlan_monitor.load_trusted())
+            finally:
+                os.close(held)
+            monitor.snapshot()
+            self.assertEqual(wlan_monitor.load_trusted(), [])
+            self.assertFalse(other.snapshot()["link"]["trusted"])
         self.run_snapshots(steps)
 
     def test_disconnect_forgets_the_network(self):

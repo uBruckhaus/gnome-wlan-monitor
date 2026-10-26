@@ -195,6 +195,8 @@ const STRINGS = {
     fzNetworkChanged: "The network changed before the login was sent. Connect again.",
     fzAppAccess: "The FRITZ!Box does not accept app access. Turn on “Allow access for applications” under Home Network › Network › Network Settings.",
     fzNoAnswer: "The FRITZ!Box did not answer.",
+    fzNotStored: "The login could not be stored in the settings folder.",
+    fzNotDeleted: "The saved login could not be deleted yet. WLAN Monitor keeps trying and does not use it.",
     fzWrongLogin: "Wrong user name or password.",
     fzNoRight: "This FRITZ!Box user may not read the home network. Give it the right “FRITZ!Box settings”.",
     fzRefused: "The FRITZ!Box refused the request (error {0}).",
