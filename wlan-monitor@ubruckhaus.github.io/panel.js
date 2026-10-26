@@ -348,6 +348,7 @@ export class WlanPanel {
         this._buildHero();
         this._buildTabs();
         this._buildVpnNotice();
+        this._buildFritzNotice();
         this._buildDevicesPage();
         this._buildMapPage();
         this.actor.add_child(separator());
@@ -735,6 +736,44 @@ export class WlanPanel {
         this.actor.add_child(this._vpnBox);
     }
 
+    // The FRITZ!Box login needs to be typed again (new certificate, changed password).
+    _buildFritzNotice() {
+        this._fritzNoticeBox = vbox({style_class: 'wlan-notice wlan-notice-new'});
+        const head = hbox({style_class: 'wlan-notice-head'});
+        head.add_child(icon('dialog-warning-symbolic'));
+        this._fritzNoticeTitle = wrapping(label('', 'wlan-strong'));
+        head.add_child(this._fritzNoticeTitle);
+        this._fritzNoticeBox.add_child(head);
+        this._fritzNoticeBox.add_child(linkButton('dialog-password-symbolic', t('fritzReconnect'), () => this._startFritzLogin()));
+        this.actor.add_child(this._fritzNoticeBox);
+    }
+
+    // A saved login that only a new login can fix: shown as a notice at the top, not only in the
+    // collapsed network info.
+    get _fritzNeedsLogin() {
+        const fritz = this._fritz;
+        return fritz.available === true && fritz.state === 'error' && !!fritz.user
+            && (fritz.message_code === 'fzCert' || fritz.message_code === 'fzWrongLogin');
+    }
+
+    _startFritzLogin() {
+        if (this._mapPage)  // the form lives on the Devices page
+            this._toggleGroup('mappage');
+        // A user name typed for another router (form cancelled there) is not offered here.
+        if (this._fritzUserNet !== this._networkId())
+            this._fritzUser.set_text('');
+        this._fritzUserNet = this._networkId();
+        this._fritzFormOpen = true;
+        this._fritzFormNet = this._networkId();
+        this._fritzFormNetId = String(this._link.net_id || '');
+        this._fritzPassword.password_visible = false;
+        if (this._fritz.user && this._fritzUser.get_text() === '')
+            this._fritzUser.set_text(this._fritz.user);
+        this._refresh();
+        const target = this._fritzUser.get_text() === '' ? this._fritzUser : this._fritzPassword;
+        this._later(() => target.grab_key_focus());
+    }
+
     _buildDevicesPage() {
         const page = this._devicesPage = vbox({style_class: 'wlan-page'});
         page.add_child(separator());
@@ -846,21 +885,7 @@ export class WlanPanel {
         const box = this._fritzBox = vbox({style_class: 'wlan-fritz'});
         const row = new St.BoxLayout({style_class: 'wlan-footer-links'});
         this._fritzConnected = dimmed(label('', 'wlan-caption'));
-        this._fritzShow = linkButton('dialog-password-symbolic', '', () => {
-            // A user name typed for another router (form cancelled there) is not offered here.
-            if (this._fritzUserNet !== this._networkId())
-                this._fritzUser.set_text('');
-            this._fritzUserNet = this._networkId();
-            this._fritzFormOpen = true;
-            this._fritzFormNet = this._networkId();
-            this._fritzFormNetId = String(this._link.net_id || '');
-            this._fritzPassword.password_visible = false;
-            if (this._fritz.user && this._fritzUser.get_text() === '')
-                this._fritzUser.set_text(this._fritz.user);
-            this._refresh();
-            const target = this._fritzUser.get_text() === '' ? this._fritzUser : this._fritzPassword;
-            this._later(() => target.grab_key_focus());
-        }, 'wlan-dim');
+        this._fritzShow = linkButton('dialog-password-symbolic', '', () => this._startFritzLogin(), 'wlan-dim');
         this._fritzLogout = linkButton('view-conceal-symbolic', t('disconnect'), () => this._host.send('fritz_logout'), 'wlan-dim');
         row.add_child(this._fritzConnected);
         row.add_child(this._fritzShow);
@@ -1071,6 +1096,12 @@ export class WlanPanel {
             this._vpnCopy.visible = this._vpnCommand !== '';
             if (!this._vpnCopy._flashing)
                 this._vpnCopy._label.text = t('copyCommand', [this._vpnCommand]);
+        }
+
+        this._fritzNoticeBox.visible = this._fritzNeedsLogin && !this._fritzFormOpen && !this._lanBlocked;
+        if (this._fritzNoticeBox.visible) {
+            const fritz = this._fritz;
+            this._fritzNoticeTitle.text = t(fritz.message_code || 'fzCert', fritz.message_args || []);
         }
 
         this._devicesPage.visible = !mapPage;
