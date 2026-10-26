@@ -98,7 +98,7 @@ A collector (`scripts/wlan-monitor.py`) runs while the extension is enabled and 
 gnome-extensions uninstall wlan-monitor@ubruckhaus.github.io
 ```
 
-The extension creates no services. The only files outside its folder are the trusted network list, the device names and view settings, the optional FRITZ!Box login, and the small coordination files `fritzbox.lock`, `trusted-networks.lock`, `devices.lock` (empty lock files) and `fritzbox-rev.json` (the random revision every FRITZ!Box Disconnect renews) in `~/.config/ubruckhaus-wlan-monitor/` (shared with the Omarchy widget, all `0600`). Delete that directory to remove them.
+The extension creates no services. The only files outside its folder are the trusted network list, the device names and view settings, the optional FRITZ!Box login, and the small coordination files `fritzbox.lock`, `trusted-networks.lock`, `devices.lock` (empty lock files) and `fritzbox-rev.json` (the random revision every FRITZ!Box Disconnect renews) in `~/.config/ubruckhaus-wlan-monitor/` (shared with the Omarchy widget, all `0600`). Before any of them is read, the directory itself is checked (a real directory, not a symlink, owned by you, not writable by group or others), and each file is opened relative to it without following symlinks and refused unless it is a regular file owned by you that group and others cannot write; `fritzbox.json`, which holds the password, is refused if group or others have any access to it at all. Delete that directory to remove them.
 
 ## Development
 
