@@ -197,6 +197,7 @@ const STRINGS = {
     fzNoAnswer: "The FRITZ!Box did not answer.",
     fzNotStored: "The login could not be stored in the settings folder.",
     fzNotDeleted: "The saved login could not be deleted yet. WLAN Monitor keeps trying and does not use it.",
+    fzNotSent: "The request could not be passed to the collector that talks to the FRITZ!Box.",
     fzWrongLogin: "Wrong user name or password.",
     fzNoRight: "This FRITZ!Box user may not read the home network. Give it the right “FRITZ!Box settings”.",
     fzRefused: "The FRITZ!Box refused the request (error {0}).",
