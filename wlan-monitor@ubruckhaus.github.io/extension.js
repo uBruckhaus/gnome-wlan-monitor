@@ -202,16 +202,15 @@ class WlanMonitorIndicator extends PanelMenu.Button {
                 this._panel.menuClosed();
             }
         });
-        // '/' focuses the device search, as in the Omarchy panel.
+        // Escape in a text field, Tab in the login form and '/' for the search. In the
+        // capture phase and added before the menu manager's own controller (which it
+        // adds when the menu opens), so it sees the keys first (WlanPanel.handleKey).
         const keys = new Clutter.KeyController();
         keys.connect('key-press', () => {
             const [, symbol] = keys.get_key();
-            const focus = global.stage.get_key_focus();
-            if (symbol !== Clutter.KEY_slash || focus instanceof Clutter.Text)
-                return Clutter.EVENT_PROPAGATE;
-            return this._panel.focusSearch() ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
+            return this._panel.handleKey(symbol) ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
         });
-        this.menu.actor.add_action(keys);
+        this.menu.actor.add_action_full('wlan-monitor-keys', Clutter.EventPhase.CAPTURE, keys);
         this._render();
     }
 

@@ -419,6 +419,7 @@ export class WlanPanel {
 
     _saveView(mode, collapsed) {
         this._localView = {mode, collapsed};
+        this._userChange = true;
         this._host.sendJson({cmd: 'view', mode, collapsed});
         this._refresh();
     }
@@ -807,13 +808,8 @@ export class WlanPanel {
         this._search.clutter_text.max_length = 40;
         this._search.clutter_text.connect('text-changed', () => {
             this._filterText = this._search.get_text();
+            this._userChange = true;
             this._refresh();
-        });
-        this._onKey(this._search.clutter_text, symbol => {
-            if (symbol !== Clutter.KEY_Escape || this._search.get_text() === '')
-                return false;
-            this._search.set_text('');
-            return true;
         });
         page.add_child(this._search);
 
@@ -833,6 +829,7 @@ export class WlanPanel {
         this._copyListButton = linkButton('edit-copy-symbolic', t('copyList'), () => this._copyList());
         this._hiddenButton = linkButton('view-reveal-symbolic', '', () => {
             this._showHidden = !this._showHidden;
+            this._userChange = true;
             this._refresh();
         });
         footer.add_child(this._copyListButton);
@@ -848,6 +845,8 @@ export class WlanPanel {
         this._fritzConnected = dimmed(label('', 'wlan-caption'));
         this._fritzShow = linkButton('dialog-password-symbolic', '', () => {
             this._fritzFormOpen = true;
+            this._fritzFormNet = this._networkId();
+            this._fritzPassword.password_visible = false;
             if (this._fritz.user && this._fritzUser.get_text() === '')
                 this._fritzUser.set_text(this._fritz.user);
             this._refresh();
@@ -867,17 +866,6 @@ export class WlanPanel {
         this._fritzUser = new St.Entry({style_class: 'wlan-entry', hint_text: t('userPlaceholder'), can_focus: true, x_expand: true});
         this._fritzUser.clutter_text.max_length = 64;
         this._fritzUser.clutter_text.connect('activate', () => this._fritzPassword.grab_key_focus());
-        this._onKey(this._fritzUser.clutter_text, symbol => {
-            if (symbol === Clutter.KEY_Escape) {
-                this._closeFritzForm();
-                return true;
-            }
-            if (symbol === Clutter.KEY_Tab) {
-                this._fritzPassword.grab_key_focus();
-                return true;
-            }
-            return false;
-        });
         form.add_child(this._fritzUser);
         const helpButton = linkButton('pan-end-symbolic', t('whereFind'), () => {
             this._fritzHelpOpen = !this._fritzHelpOpen;
@@ -892,12 +880,6 @@ export class WlanPanel {
         this._fritzPassword.clutter_text.max_length = 128;
         this._fritzPassword.clutter_text.connect('activate', () => this._fritzConnect());
         this._fritzPassword.clutter_text.connect('text-changed', () => setSensitive(this._fritzConnectButton, this._fritzPassword.get_text() !== ''));
-        this._onKey(this._fritzPassword.clutter_text, symbol => {
-            if (symbol !== Clutter.KEY_Escape)
-                return false;
-            this._closeFritzForm();
-            return true;
-        });
         form.add_child(this._fritzPassword);
         const buttons = new St.BoxLayout({style_class: 'wlan-buttons'});
         this._fritzConnectButton = pillButton('dialog-password-symbolic', t('connect'), () => this._fritzConnect());
@@ -909,17 +891,26 @@ export class WlanPanel {
         parent.add_child(box);
     }
 
+    // The router the form was opened for: SSID, router address and its MAC.
+    _networkId() {
+        return JSON.stringify([this._link.ssid || '', this._link.gateway || '', this._gatewayDevice?.mac || '']);
+    }
+
     _fritzConnect() {
         const password = this._fritzPassword.get_text();
         if (password === '')
             return;
-        this._host.sendJson({cmd: 'fritz_login', user: this._fritzUser.get_text().trim(), password});
+        // Typed for another router: the network changed while the form was open.
+        if (this._fritzFormNet === this._networkId())
+            this._host.sendJson({cmd: 'fritz_login', user: this._fritzUser.get_text().trim(), password});
         this._closeFritzForm();
     }
 
     _closeFritzForm() {
         this._fritzPassword.set_text('');
+        this._fritzPassword.password_visible = false;
         this._fritzFormOpen = false;
+        this._fritzFormNet = null;
         this._refresh();
     }
 
@@ -974,14 +965,21 @@ export class WlanPanel {
     }
 
     _fillChooser(row) {
+        const signature = JSON.stringify([this._viewModes, this._viewMode]);
+        if (row._signature === signature)
+            return;
+        row._signature = signature;
+        const focusId = this._focusIdIn(row);
         row.destroy_all_children();
         for (const mode of this._viewModes) {
             const button = new St.Button({label: t(VIEW_SHORT[mode]), style_class: 'wlan-chip', can_focus: true});
             if (mode === this._viewMode)
                 button.add_style_pseudo_class('checked');
+            button._focusId = `chooser:${mode}`;
             button.connect('clicked', () => this._setViewMode(mode));
             row.add_child(button);
         }
+        this._restoreFocus(row, focusId);
     }
 
     _buildFooter() {
@@ -1005,6 +1003,13 @@ export class WlanPanel {
 
     update(stats) {
         this.stats = stats || {};
+        // A login form opened for another network is dropped with what was typed.
+        if (this._fritzFormOpen && this._fritzFormNet !== this._networkId()) {
+            this._fritzPassword.set_text('');
+            this._fritzPassword.password_visible = false;
+            this._fritzFormOpen = false;
+            this._fritzFormNet = null;
+        }
         // A stored view from the collector replaces the local copy once it caught up.
         if (this._localView && this.stats.view && JSON.stringify(this.stats.view) === JSON.stringify(this._localView))
             this._localView = null;
@@ -1143,10 +1148,13 @@ export class WlanPanel {
         const signature = JSON.stringify([this._devicesRev, this._view, this._filterText, this._showHidden,
             this._expandedKey, this._editingKey, this._meshActive, (this._fritz.aps || []).map(ap => [ap.mac, ap.name, ap.role, ap.via, ap.band]),
             this._devices.length]);
-        if (signature !== this._listSignature) {
+        // While a name is edited, only the user's own actions rebuild the list.
+        const editingBuilt = this._editingKey !== '' && this._listBuiltFor === this._editingKey;
+        if (signature !== this._listSignature && !(editingBuilt && !this._userChange)) {
             this._listSignature = signature;
             this._rebuildList();
         }
+        this._userChange = false;
     }
 
     _refreshFritz() {
@@ -1172,6 +1180,8 @@ export class WlanPanel {
     }
 
     _rebuildList() {
+        const focusId = this._focusIdIn(this._list);
+        this._listBuiltFor = this._editingKey;
         this._list.destroy_all_children();
         const entries = this._listEntries;
         for (const entry of entries) {
@@ -1182,6 +1192,53 @@ export class WlanPanel {
         }
         if (entries.length === 0 && this._filterText !== '')
             this._list.add_child(dimmed(label(t('noMatch', [this._filterText]), 'wlan-caption')));
+        this._restoreFocus(this._list, focusId);
+        if (this._revealKey) {
+            const reveal = this._revealKey;
+            this._revealKey = '';
+            this._timeout(60, () => this._reveal(reveal), this._list);
+        }
+    }
+
+    // Buttons carry an id (_focusId) that survives a rebuild of their list.
+    _focusIdIn(container) {
+        let actor = global.stage.get_key_focus();
+        while (actor && actor !== container) {
+            if (actor._focusId)
+                return container.contains(actor) ? actor._focusId : null;
+            actor = actor.get_parent();
+        }
+        return null;
+    }
+
+    _restoreFocus(container, focusId) {
+        if (!focusId)
+            return;
+        const find = actor => {
+            if (actor._focusId === focusId)
+                return actor;
+            for (const child of actor.get_children()) {
+                const found = find(child);
+                if (found)
+                    return found;
+            }
+            return null;
+        };
+        (find(container) ?? container.get_first_child())?.grab_key_focus();
+    }
+
+    // Scroll the device list so the row of `key` (and its details) is in view.
+    _reveal(key) {
+        const row = this._list.get_children().find(child => child._deviceKey === key);
+        if (!row || !row.has_allocation())
+            return;
+        const adjustment = this._listScroll.vadjustment;
+        const box = row.get_allocation_box();
+        const page = adjustment.page_size;
+        if (box.y2 > adjustment.value + page)
+            adjustment.value = Math.min(adjustment.upper - page, box.y2 - page);
+        if (box.y1 < adjustment.value)
+            adjustment.value = Math.max(adjustment.lower, box.y1);
     }
 
     _groupHeader(group) {
@@ -1202,6 +1259,7 @@ export class WlanPanel {
         box.add_child(count);
         box.add_child(dimmed(icon(group.collapsed ? 'pan-end-symbolic' : 'pan-down-symbolic', 'wlan-chevron')));
         const button = new St.Button({child: box, style_class: 'wlan-group', x_expand: true, can_focus: true});
+        button._focusId = `group:${group.id}`;
         button.connect('clicked', () => this._toggleGroup(group.id));
         return button;
     }
@@ -1214,6 +1272,7 @@ export class WlanPanel {
         const editing = this._editingKey === key && dev.can_edit === true;
         const webUrl = String(dev.web_url || '');
         const block = vbox({style_class: 'wlan-device'});
+        block._deviceKey = key;
         if (expanded)
             block.add_style_pseudo_class('checked');
 
@@ -1226,15 +1285,13 @@ export class WlanPanel {
             dimmed(kind);
         let nameField = null;
         if (editing) {
-            nameField = new St.Entry({style_class: 'wlan-entry', text: dev.name, hint_text: dev.auto_name || t('deviceName'), can_focus: true, x_expand: true});
+            nameField = new St.Entry({style_class: 'wlan-entry', text: this._editDraft ?? dev.name, hint_text: dev.auto_name || t('deviceName'), can_focus: true, x_expand: true});
             nameField.clutter_text.max_length = 40;
             nameField.clutter_text.connect('activate', () => this._finishRename(dev, nameField.get_text()));
-            this._onKey(nameField.clutter_text, symbol => {
-                if (symbol !== Clutter.KEY_Escape)
-                    return false;
-                this._finishRename(null, null);
-                return true;
-            });
+            // The draft survives a rebuild of the list (e.g. after "Show hidden").
+            nameField.clutter_text.connect('text-changed', () => (this._editDraft = nameField.get_text()));
+            this._nameField = nameField;
+            this._nameFieldDev = dev;
             top.add_child(kind);
             top.add_child(nameField);
         } else {
@@ -1255,11 +1312,12 @@ export class WlanPanel {
             else if (!online)
                 dimmed(right);
             main.add_child(right);
-            block._right = right;
             const mainButton = new St.Button({child: main, style_class: 'wlan-row-button', x_expand: true, can_focus: true});
+            mainButton._focusId = `device:${key}`;
             mainButton.connect('clicked', () => {
                 this._editingKey = '';
                 this._expandedKey = expanded ? '' : key;
+                this._revealKey = this._expandedKey;
                 this._refresh();
             });
             top.add_child(mainButton);
@@ -1334,12 +1392,12 @@ export class WlanPanel {
             block.add_child(details);
         }
         if (nameField) {
-            this._later(() => {
-                if (nameField.get_stage()) {
-                    nameField.grab_key_focus();
-                    nameField.clutter_text.set_selection(0, -1);
-                }
-            });
+            this._timeout(0, () => {
+                if (this._editingKey !== key)
+                    return;
+                nameField.grab_key_focus();
+                nameField.clutter_text.set_selection(0, -1);
+            }, nameField);
         }
         return block;
     }
@@ -1353,6 +1411,8 @@ export class WlanPanel {
     _startRename(dev) {
         this._expandedKey = deviceKey(dev);
         this._editingKey = deviceKey(dev);
+        this._editDraft = null;
+        this._userChange = true;
         this._refresh();
     }
 
@@ -1360,6 +1420,9 @@ export class WlanPanel {
         if (dev && name !== null)
             this._deviceCommand('rename', dev, {name: String(name).trim().slice(0, 40)});
         this._editingKey = '';
+        this._editDraft = null;
+        this._nameField = null;
+        this._userChange = true;
         // The list was frozen while editing: take the newest one now.
         this._devicesRev = '';
         this.update(this.stats);
@@ -1373,6 +1436,7 @@ export class WlanPanel {
         this._filterText = '';
         this._search.set_text('');
         this._expandedKey = deviceKey(dev);
+        this._revealKey = this._expandedKey;
         this._saveView(this._viewMode, this._collapsed.filter(id => !drop.includes(id)));
     }
 
@@ -1393,9 +1457,11 @@ export class WlanPanel {
         if (signature === this._mapSignature)
             return;
         this._mapSignature = signature;
+        const focusId = this._focusIdIn(this._map);
         this._map.destroy_all_children();
         for (const row of this._mapRows)
             this._map.add_child(this._mapRow(row));
+        this._restoreFocus(this._map, focusId);
     }
 
     // One row of the network map with its tree connectors.
@@ -1466,6 +1532,7 @@ export class WlanPanel {
         let main = content;
         if (clickable) {
             main = new St.Button({child: content, style_class: 'wlan-row-button', x_expand: true, can_focus: true});
+            main._focusId = `map:${row.type}:${row.id || (dev ? deviceKey(dev) : '')}`;
             main.connect('clicked', () => {
                 if (row.type === 'device' && dev)
                     this._openDevice(dev);
@@ -1525,13 +1592,36 @@ export class WlanPanel {
         }, button);
     }
 
-    _onKey(actor, handler) {
-        const controller = new Clutter.KeyController();
-        controller.connect('key-press', () => {
-            const [, symbol] = controller.get_key();
-            return handler(symbol) ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
-        });
-        actor.add_action(controller);
+    // Keys for the text fields. The menu manager closes the menu on Escape in the
+    // capture phase, before a field sees the key, so the indicator asks here first
+    // (its own capture-phase controller): Escape clears the search, cancels a rename
+    // or closes the login form; Tab moves from the user name to the password; '/'
+    // focuses the search. Returns true when the key was used.
+    handleKey(symbol) {
+        const focus = global.stage.get_key_focus();
+        const nameText = this._nameField && !this._nameField._wlanGone ? this._nameField.clutter_text : null;
+        if (symbol === Clutter.KEY_Escape) {
+            if (focus === this._search.clutter_text && this._search.get_text() !== '') {
+                this._search.set_text('');
+                return true;
+            }
+            if (nameText && focus === nameText) {
+                this._finishRename(null, null);
+                return true;
+            }
+            if (focus === this._fritzUser.clutter_text || focus === this._fritzPassword.clutter_text) {
+                this._closeFritzForm();
+                return true;
+            }
+            return false;
+        }
+        if (symbol === Clutter.KEY_Tab && focus === this._fritzUser.clutter_text) {
+            this._fritzPassword.grab_key_focus();
+            return true;
+        }
+        if (symbol === Clutter.KEY_slash && !(focus instanceof Clutter.Text))
+            return this.focusSearch();
+        return false;
     }
 
     // A one-shot timeout that is removed with the panel (or with `owner`).
@@ -1579,7 +1669,9 @@ export class WlanPanel {
             this._devicesRev = '';
         }
         this._fritzFormOpen = false;
+        this._fritzFormNet = null;
         this._fritzPassword.set_text('');
+        this._fritzPassword.password_visible = false;
         this._listSignature = null;
         this._mapSignature = null;
     }

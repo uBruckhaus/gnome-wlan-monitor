@@ -77,8 +77,10 @@ WlanMonitorExtension.prototype.enable = function () {
         panel()._toggleGroup('mappage');
         panel()._setViewMode('list');
         ind().menu.close(false);
+        console.log('[WLAN Monitor] SCENARIO DONE');
     });
     run();
 };
 JS
+export EXPECT_DONE=1
 export WM_SHOT_DIR="${WM_SHOT_DIR:-$ROOT/dist/screenshots}"; mkdir -p "$WM_SHOT_DIR"

@@ -41,4 +41,9 @@ kill $SHELL_PID 2>/dev/null; sleep 1
 [ -n "${KEEP_LOG:-}" ] && cp "$T/shell.log" "$KEEP_LOG"
 grep -v -e Gtk-WARNING -e "^$" "$T/shell.log" | grep -i -e "wlan monitor\|wlan-monitor\|js\|error\|exception" | head -${LINES_MAX:-80}
 grep -e "JS ERROR" -e "St-CRITICAL" "$T/shell.log" | grep -qv "gnome-shell-disable-extensions" && { echo "FAIL: errors in the shell log"; FAILED=1; }
+grep -q "TEST STEP FAILED" "$T/shell.log" && { echo "FAIL: a test step failed"; FAILED=1; }
+# Scenarios that set EXPECT_DONE log "SCENARIO DONE" as their last step.
+if [ -n "${EXPECT_DONE:-}" ] && ! grep -q "SCENARIO DONE" "$T/shell.log"; then
+    echo "FAIL: the scenario did not finish"; FAILED=1
+fi
 exit $FAILED

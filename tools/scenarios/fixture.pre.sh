@@ -106,8 +106,77 @@ WlanMonitorExtension.prototype.enable = function () {
         panel()._toggleGroup(fritzBoxRow.id);
     });
     step(1200, () => shot('fx-map-folded'));
-    step(500, () => ind().menu.close(false));
+    // Keys through a virtual keyboard: they pass the menu manager's capture-phase
+    // controller like real ones.
+    const keyboard = global.stage.context.get_backend().get_default_seat()
+        .create_virtual_device(Clutter.InputDeviceType.KEYBOARD_DEVICE);
+    const press = keyval => {
+        const now = GLib.get_monotonic_time();
+        keyboard.notify_keyval(now, keyval, Clutter.KeyState.PRESSED);
+        keyboard.notify_keyval(now + 1000, keyval, Clutter.KeyState.RELEASED);
+    };
+    const check = (what, ok) => console.log(`[WLAN Monitor] ${ok ? 'ok' : 'TEST STEP FAILED'}: ${what}`);
+    step(500, () => {
+        panel()._toggleGroup('mappage');
+        panel()._toggleGroup('02:00:00:00:00:02');
+    });
+    step(800, () => {
+        panel()._rescanButton.grab_key_focus();
+        press(Clutter.KEY_slash);
+    });
+    step(500, () => {
+        check('slash focuses the search', global.stage.get_key_focus() === panel()._search.clutter_text);
+        panel()._search.set_text('pho');
+    });
+    step(500, () => press(Clutter.KEY_Escape));
+    step(500, () => {
+        check('Escape clears the search and keeps the menu open', panel()._search.get_text() === '' && ind().menu.isOpen);
+        panel()._startRename(panel()._devices.find(d => d.name === 'Pixel 9'));
+    });
+    step(800, () => {
+        panel()._nameField.set_text('Draft name');
+        panel()._showHidden = true;
+        panel()._userChange = true;
+        panel()._refresh();
+    });
+    step(800, () => {
+        check('the draft survives a rebuild', panel()._nameField.get_text() === 'Draft name');
+        check('the rename field keeps the focus', global.stage.get_key_focus() === panel()._nameField.clutter_text);
+        press(Clutter.KEY_Escape);
+    });
+    step(500, () => {
+        check('Escape cancels the rename and keeps the menu open', panel()._editingKey === '' && ind().menu.isOpen);
+        panel()._toggleGroup('showinfo');
+        panel()._fritzFormOpen = true;
+        panel()._fritzFormNet = panel()._networkId();
+        panel()._refresh();
+    });
+    step(500, () => {
+        panel()._fritzUser.grab_key_focus();
+        press(Clutter.KEY_Tab);
+    });
+    step(500, () => {
+        check('Tab moves to the password', global.stage.get_key_focus() === panel()._fritzPassword.clutter_text);
+        panel()._fritzPassword.set_text('secret');
+        panel()._fritzPassword.password_visible = true;
+        press(Clutter.KEY_Escape);
+    });
+    step(500, () => {
+        check('Escape closes the login form and forgets the password', !panel()._fritzFormOpen &&
+            panel()._fritzPassword.get_text() === '' && !panel()._fritzPassword.password_visible && ind().menu.isOpen);
+        // A login typed for another network is not sent.
+        panel()._fritzFormOpen = true;
+        panel()._fritzFormNet = '["Another network","10.0.0.1",""]';
+        panel()._fritzPassword.set_text('secret');
+        panel()._fritzConnect();
+    });
+    step(500, () => press(Clutter.KEY_Escape));
+    step(500, () => {
+        check('Escape outside a field closes the menu', !ind().menu.isOpen);
+        console.log('[WLAN Monitor] SCENARIO DONE');
+    });
     run();
 };
 JS
+export EXPECT_DONE=1
 export WM_SHOT_DIR="${WM_SHOT_DIR:-$ROOT/dist/screenshots}"; mkdir -p "$WM_SHOT_DIR"
