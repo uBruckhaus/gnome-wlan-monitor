@@ -1,0 +1,356 @@
+/* Top bar icon */
+.wlan-bar-line {
+  height: 2px;
+  margin: 0 6px 3px 6px;
+}
+
+.wlan-new-dot {
+  width: 6px;
+  height: 6px;
+  margin: 5px 4px 0 0;
+  border-radius: 99px;
+  background-color: -st-accent-color;
+}
+
+.wlan-accent {
+  color: -st-accent-color;
+}
+
+/* Panel */
+.wlan-panel {
+  width: 430px;
+  spacing: 8px;
+  /* room on the right for the overlay scrollbar */
+  padding: 4px 14px 4px 6px;
+}
+
+.wlan-hero {
+  spacing: 12px;
+}
+
+.wlan-hero-icon {
+  icon-size: 32px;
+  color: -st-accent-color;
+}
+
+.wlan-title {
+  font-weight: bold;
+  font-size: 1.15em;
+}
+
+.wlan-pill-label {
+  font-size: 0.85em;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+}
+
+.wlan-tabs {
+  spacing: 6px;
+}
+
+.wlan-tab {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border-bottom: 2px solid transparent;
+  font-size: 0.95em;
+  color: rgba(128, 128, 128, 1);
+}
+
+.wlan-tab:hover {
+  background-color: rgba(128, 128, 128, 0.12);
+}
+
+.wlan-tab:checked {
+  color: -st-accent-color;
+  font-weight: bold;
+  border-bottom: 2px solid -st-accent-color;
+  border-radius: 6px 6px 0 0;
+}
+
+.wlan-tab-box,
+.wlan-link-box,
+.wlan-pill-box {
+  spacing: 6px;
+}
+
+.wlan-tab-icon,
+.wlan-link-icon,
+.wlan-pill-icon,
+.wlan-small-icon,
+.wlan-chevron {
+  icon-size: 14px;
+}
+
+.wlan-icon {
+  icon-size: 16px;
+}
+
+.wlan-page,
+.wlan-info,
+.wlan-fritz,
+.wlan-fritz-form,
+.wlan-details {
+  spacing: 6px;
+}
+
+.wlan-separator {
+  height: 1px;
+  margin: 4px 0;
+  background-color: rgba(128, 128, 128, 0.3);
+}
+
+.wlan-section {
+  font-size: 0.8em;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.wlan-strong {
+  font-weight: bold;
+}
+
+.wlan-italic {
+  font-style: italic;
+}
+
+.wlan-caption {
+  font-size: 0.9em;
+  font-feature-settings: "tnum";
+}
+
+.wlan-indented {
+  margin-left: 24px;
+}
+
+.wlan-vpn-line {
+  color: #3584e4;
+  font-weight: bold;
+}
+
+/* Notices */
+.wlan-notice {
+  spacing: 8px;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.wlan-notice-head {
+  spacing: 8px;
+}
+
+.wlan-notice-vpn {
+  background-color: rgba(53, 132, 228, 0.14);
+  border: 1px solid rgba(53, 132, 228, 0.6);
+}
+
+.wlan-notice-new {
+  background-color: -st-accent-bg-color;
+  border: 1px solid -st-accent-color;
+}
+
+.wlan-notice-new,
+.wlan-notice-new .wlan-link {
+  color: -st-accent-fg-color;
+}
+
+/* Buttons and links */
+.wlan-link {
+  padding: 2px 3px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.wlan-link:hover,
+.wlan-link:focus {
+  color: -st-accent-color;
+  text-decoration: underline;
+}
+
+.wlan-dim {
+  color: rgba(128, 128, 128, 1);
+}
+
+.wlan-footer-links,
+.wlan-actions {
+  spacing: 14px;
+}
+
+.wlan-buttons {
+  spacing: 8px;
+}
+
+.wlan-pill {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  font-size: 0.95em;
+}
+
+.wlan-pill:hover,
+.wlan-pill:focus {
+  background-color: rgba(128, 128, 128, 0.16);
+}
+
+.wlan-chooser {
+  spacing: 6px;
+}
+
+.wlan-chip {
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  font-size: 0.9em;
+}
+
+.wlan-chip:hover {
+  background-color: rgba(128, 128, 128, 0.16);
+}
+
+.wlan-chip:checked {
+  background-color: -st-accent-color;
+  color: -st-accent-fg-color;
+  border-color: -st-accent-color;
+}
+
+.wlan-icon-button {
+  padding: 3px;
+  border-radius: 4px;
+}
+
+.wlan-icon-button:hover,
+.wlan-icon-button:focus {
+  color: -st-accent-color;
+  background-color: rgba(128, 128, 128, 0.14);
+}
+
+.wlan-row-button {
+  border-radius: 6px;
+  padding: 2px 4px;
+}
+
+.wlan-row-button:hover,
+.wlan-row-button:focus {
+  background-color: rgba(128, 128, 128, 0.12);
+}
+
+.wlan-info-row {
+  spacing: 8px;
+}
+
+.wlan-entry {
+  font-size: 0.9em;
+}
+
+.wlan-entry-icon {
+  icon-size: 14px;
+  padding-right: 4px;
+}
+
+/* Meters and bars */
+.wlan-meter {
+  spacing: 2px;
+}
+
+.wlan-track {
+  border-radius: 99px;
+  background-color: rgba(128, 128, 128, 0.22);
+}
+
+.wlan-fill {
+  border-radius: 99px;
+  background-color: -st-accent-color;
+}
+
+.wlan-bar-meter {
+  height: 5px;
+  margin-top: 3px;
+}
+
+.wlan-tip {
+  margin-top: 2px;
+}
+
+.wlan-signal-bars {
+  spacing: 2px;
+  height: 13px;
+}
+
+.wlan-signal-bar {
+  width: 3px;
+  border-radius: 1px;
+}
+
+/* Device list */
+.wlan-list {
+  spacing: 4px;
+  /* room on the right for the list's own overlay scrollbar */
+  padding-right: 10px;
+}
+
+.wlan-device {
+  spacing: 1px;
+  border-radius: 6px;
+  padding: 2px 0;
+}
+
+.wlan-device:checked {
+  background-color: rgba(128, 128, 128, 0.08);
+}
+
+.wlan-device-main {
+  spacing: 6px;
+}
+
+.wlan-in-group {
+  margin-left: 10px;
+}
+
+.wlan-group {
+  border-radius: 6px;
+  padding: 4px 6px 4px 4px;
+  background-color: rgba(128, 128, 128, 0.08);
+}
+
+.wlan-group:hover,
+.wlan-group:focus {
+  background-color: rgba(128, 128, 128, 0.16);
+}
+
+.wlan-group-box {
+  spacing: 6px;
+}
+
+.wlan-group-title {
+  font-size: 0.95em;
+  font-weight: bold;
+}
+
+/* Network map */
+.wlan-map-line {
+  background-color: rgba(128, 128, 128, 0.45);
+}
+
+.wlan-map-node {
+  spacing: 6px;
+}
+
+.wlan-map-icon {
+  icon-size: 12px;
+  padding: 3px;
+  border-radius: 99px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  color: rgba(128, 128, 128, 1);
+}
+
+.wlan-map-icon-big {
+  icon-size: 14px;
+  padding: 4px;
+  background-color: rgba(128, 128, 128, 0.12);
+}
+
+.wlan-map-online {
+  color: -st-accent-color;
+  border-color: -st-accent-color;
+}

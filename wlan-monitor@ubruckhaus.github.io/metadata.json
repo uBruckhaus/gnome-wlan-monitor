@@ -1,0 +1,8 @@
+{
+  "uuid": "wlan-monitor@ubruckhaus.github.io",
+  "name": "WLAN Monitor",
+  "description": "See who is on your Wi-Fi from the top bar: every device with a type icon and plain-language status, your own names, new-device alerts, groups by platform, type or Wi-Fi band, a network map, FRITZ!Box mesh details and VPN detection that explains when a VPN blocks your home network. Active scans only on networks you trust. Left click opens the panel, right click rescans. Needs python3.",
+  "shell-version": ["51"],
+  "url": "https://github.com/uBruckhaus/gnome-wlan-monitor",
+  "version-name": "0.1.0"
+}

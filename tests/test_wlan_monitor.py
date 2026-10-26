@@ -8,7 +8,7 @@ import time
 import unittest
 from unittest import mock
 
-SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "wlan-monitor.py")
+SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "wlan-monitor@ubruckhaus.github.io", "scripts", "wlan-monitor.py")
 spec = importlib.util.spec_from_file_location("wlan_monitor", SCRIPT_PATH)
 wlan_monitor = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(wlan_monitor)
