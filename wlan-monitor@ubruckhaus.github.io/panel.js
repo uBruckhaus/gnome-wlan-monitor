@@ -335,6 +335,9 @@ export class WlanPanel {
         this._filterText = '';
         this._localView = null;
         this._fritzFormOpen = false;
+        this._fritzFormNet = null;
+        this._fritzFormNetId = '';           // the collector's link.net_id the form was opened for
+        this._fritzUserNet = null;           // the network the user name in the form was typed on
         this._fritzHelpOpen = false;
         this._chooser = '';                  // 'list' / 'map': the grouping choices are shown
         this._listSignature = null;
@@ -844,8 +847,13 @@ export class WlanPanel {
         const row = new St.BoxLayout({style_class: 'wlan-footer-links'});
         this._fritzConnected = dimmed(label('', 'wlan-caption'));
         this._fritzShow = linkButton('dialog-password-symbolic', '', () => {
+            // A user name typed for another router (form cancelled there) is not offered here.
+            if (this._fritzUserNet !== this._networkId())
+                this._fritzUser.set_text('');
+            this._fritzUserNet = this._networkId();
             this._fritzFormOpen = true;
             this._fritzFormNet = this._networkId();
+            this._fritzFormNetId = String(this._link.net_id || '');
             this._fritzPassword.password_visible = false;
             if (this._fritz.user && this._fritzUser.get_text() === '')
                 this._fritzUser.set_text(this._fritz.user);
@@ -891,9 +899,13 @@ export class WlanPanel {
         parent.add_child(box);
     }
 
-    // The router the form was opened for: SSID, router address and its MAC.
+    // The router the form was opened for, as the collector reports it in the link: its network
+    // id (new on every gateway change), SSID, router address and MAC. Not from the device list,
+    // which is frozen while a name is being edited. The collector refuses a login whose id is
+    // no longer current.
     _networkId() {
-        return JSON.stringify([this._link.ssid || '', this._link.gateway || '', this._gatewayDevice?.mac || '']);
+        return JSON.stringify([String(this._link.net_id || ''), this._link.ssid || '', this._link.gateway || '',
+            String(this._link.gateway_mac || '')]);
     }
 
     _fritzConnect() {
@@ -901,8 +913,10 @@ export class WlanPanel {
         if (password === '')
             return;
         // Typed for another router: the network changed while the form was open.
-        if (this._fritzFormNet === this._networkId())
-            this._host.sendJson({cmd: 'fritz_login', user: this._fritzUser.get_text().trim(), password});
+        if (this._fritzFormNetId !== '' && this._fritzFormNet === this._networkId()) {
+            this._host.sendJson({cmd: 'fritz_login', user: this._fritzUser.get_text().trim(), password,
+                net: this._fritzFormNetId});
+        }
         this._closeFritzForm();
     }
 
@@ -911,6 +925,7 @@ export class WlanPanel {
         this._fritzPassword.password_visible = false;
         this._fritzFormOpen = false;
         this._fritzFormNet = null;
+        this._fritzFormNetId = '';
         this._refresh();
     }
 
@@ -1003,12 +1018,15 @@ export class WlanPanel {
 
     update(stats) {
         this.stats = stats || {};
-        // A login form opened for another network is dropped with what was typed.
+        // A login form opened for another network is dropped with what was typed (password
+        // and user name).
         if (this._fritzFormOpen && this._fritzFormNet !== this._networkId()) {
             this._fritzPassword.set_text('');
             this._fritzPassword.password_visible = false;
+            this._fritzUser.set_text('');
             this._fritzFormOpen = false;
             this._fritzFormNet = null;
+            this._fritzFormNetId = '';
         }
         // A stored view from the collector replaces the local copy once it caught up.
         if (this._localView && this.stats.view && JSON.stringify(this.stats.view) === JSON.stringify(this._localView))
@@ -1670,6 +1688,7 @@ export class WlanPanel {
         }
         this._fritzFormOpen = false;
         this._fritzFormNet = null;
+        this._fritzFormNetId = '';
         this._fritzPassword.set_text('');
         this._fritzPassword.password_visible = false;
         this._listSignature = null;
